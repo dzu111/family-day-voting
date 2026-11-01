@@ -68,34 +68,62 @@ export default function ResultsPage() {
         }
       })
 
-      let unassignedFamilies = [0, 1, 2, 3, 4, 5, 6]
-      let unassignedCategories = [0, 1, 2, 3, 4, 5, 6]
-      const categoryWinners = Array(7).fill(null)
+      // LOGIK BAHARU: Kira jumlah undian bagi setiap keluarga untuk pengiraan wajaran yang lebih adil
+      const votesPerFamily = Array(7).fill(0)
+      votes.forEach(v => { 
+        if (v.family_id >= 1 && v.family_id <= 7) votesPerFamily[v.family_id - 1]++ 
+      })
 
-      while (unassignedFamilies.length > 0 && unassignedCategories.length > 0) {
-        let maxScore = -1
-        let bestFam = -1
-        let bestCat = -1
-
-        for (let f of unassignedFamilies) {
-          for (let c of unassignedCategories) {
-            if (scores[f][c] > maxScore) {
-              maxScore = scores[f][c]
-              bestFam = f
-              bestCat = c
-            }
+      // LOGIK BAHARU: Hasilkan semua kombinasi (permutations) yang mungkin
+      const permutations = (n: number): number[][] => {
+        const result: number[][] = []
+        const permute = (arr: number[], l: number) => {
+          if (l === arr.length) { result.push([...arr]); return }
+          for (let i = l; i < arr.length; i++) {
+            [arr[l], arr[i]] = [arr[i], arr[l]]
+            permute(arr, l + 1)
+            ;[arr[l], arr[i]] = [arr[i], arr[l]]
           }
         }
-
-        categoryWinners[bestCat] = {
-          winningFamily: bestFam + 1,
-          maxCount: maxScore,
-          allComments: commentsMap[bestFam][bestCat]
-        }
-
-        unassignedFamilies = unassignedFamilies.filter(f => f !== bestFam)
-        unassignedCategories = unassignedCategories.filter(c => c !== bestCat)
+        permute(Array.from({ length: n }, (_, i) => i), 0)
+        return result
       }
+
+      // LOGIK BAHARU: Nilaikan kesemua 5,040 kombinasi untuk mencari pembahagian paling optimum
+      let bestTotal = -1
+      let bestPerms: number[][] = []
+      
+      for (const perm of permutations(7)) {
+        let total = 0
+        for (let f = 0; f < 7; f++) {
+          // Bahagikan skor dengan jumlah ahli keluarga supaya keluarga besar tidak memonopoli
+          total += scores[f][perm[f]] / Math.max(votesPerFamily[f], 1)
+        }
+        if (total > bestTotal) { 
+          bestTotal = total; 
+          bestPerms = [perm] 
+        }
+        else if (total === bestTotal) {
+          bestPerms.push(perm)
+        }
+      }
+
+      // Jika ada persamaan markah (tie)
+      if (bestPerms.length > 1) {
+        console.warn(`TIE: Terdapat ${bestPerms.length} kombinasi yang sama hebatnya`)
+        bestPerms.forEach((p, i) =>
+          console.warn(`Pilihan ${i + 1}:`, p.map((cat, fam) => `${FAMILY_NAMES[fam + 1]} -> ${CATEGORIES[cat]}`))
+        )
+      }
+
+      const categoryWinners = Array(7).fill(null)
+      bestPerms[0].forEach((cat, fam) => {
+        categoryWinners[cat] = {
+          winningFamily: fam + 1,
+          maxCount: scores[fam][cat], // UI masih akan memaparkan jumlah undian asal (raw vote count)
+          allComments: commentsMap[fam][cat]
+        }
+      })
 
       setWinners(categoryWinners)
       setLoading(false)

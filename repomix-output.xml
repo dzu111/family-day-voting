@@ -1,0 +1,1207 @@
+This file is a merged representation of the entire codebase, combined into a single document by Repomix.
+
+<file_summary>
+This section contains a summary of this file.
+
+<purpose>
+This file contains a packed representation of the entire repository's contents.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.
+</purpose>
+
+<file_format>
+The content is organized as follows:
+1. This summary section
+2. Repository information
+3. Directory structure
+4. Repository files (if enabled)
+5. Multiple file entries, each consisting of:
+  - File path as an attribute
+  - Full contents of the file
+</file_format>
+
+<usage_guidelines>
+- This file should be treated as read-only. Any changes should be made to the
+  original repository files, not this packed version.
+- When processing this file, use the file path to distinguish
+  between different files in the repository.
+- Be aware that this file may contain sensitive information. Handle it with
+  the same level of security as you would the original repository.
+</usage_guidelines>
+
+<notes>
+- Some files may have been excluded based on .gitignore rules and Repomix's configuration
+- Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
+- Files matching patterns in .gitignore are excluded
+- Files matching default ignore patterns are excluded
+- Files are sorted by Git change count (files with more changes are at the bottom)
+</notes>
+
+</file_summary>
+
+<directory_structure>
+app/
+  admin/
+    page.tsx
+  results/
+    page.tsx
+  favicon.ico
+  globals.css
+  layout.tsx
+  page.tsx
+public/
+  audio.m4a
+  file.svg
+  globe.svg
+  keluarga-1.jpg
+  keluarga-2.jpg
+  keluarga-3.jpg
+  keluarga-4.jpg
+  keluarga-5.jpg
+  keluarga-6.jpg
+  keluarga-7.jpg
+  next.svg
+  vercel.svg
+  window.svg
+src/
+  lib/
+    supabase.ts
+.gitignore
+AGENTS.md
+eslint.config.mjs
+next.config.ts
+package.json
+README.md
+tsconfig.json
+</directory_structure>
+
+<files>
+This section contains the contents of the repository's files.
+
+<file path="app/admin/page.tsx">
+"use client"
+
+import { useEffect, useState } from 'react'
+import { supabase } from '../../src/lib/supabase'
+
+const CATEGORIES = [
+  "Paling Gempak",
+  "Pakaian Sedondon",
+  "Paling Sporting",
+  "Paling Havoc",
+  "Paling Sempoi",
+  "Teamwork Mantap",
+  "Persiapan Lengkap"
+]
+
+const FAMILY_NAMES: Record<number, string> = {
+  1: "Keluarga Ayahlong",
+  2: "Keluarga Ayah Ngah",
+  3: "Keluarga Mak Belakang",
+  4: "Keluarga Mak Lang",
+  5: "Keluarga Mak Dak",
+  6: "Keluarga Makteh",
+  7: "Keluarga Acu"
+}
+
+export default function AdminPanel() {
+  const [activeFamily, setActiveFamily] = useState<number | null>(null)
+  const [votes, setVotes] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    const fetchInitialData = async () => {
+      const { data: controlData } = await supabase.from('live_control').select('*').single()
+      if (controlData) {
+        setActiveFamily(controlData.active_family_id)
+        if (controlData.active_family_id) fetchVotes(controlData.active_family_id)
+      }
+      setLoading(false)
+    }
+    fetchInitialData()
+
+    // Listen to control state changes
+    const controlChannel = supabase.channel('control_changes')
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'live_control' }, (payload) => {
+        const newData = payload.new
+        setActiveFamily(newData.active_family_id)
+        if (newData.active_family_id) {
+          fetchVotes(newData.active_family_id)
+        } else {
+          setVotes([])
+        }
+      }).subscribe()
+
+    // Listen to new votes arriving in real-time
+    const votesChannel = supabase.channel('new_votes')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'votes' }, (payload) => {
+        setVotes(prev => [payload.new, ...prev])
+      }).subscribe()
+
+    return () => {
+      supabase.removeChannel(controlChannel)
+      supabase.removeChannel(votesChannel)
+    }
+  }, [])
+
+  const fetchVotes = async (familyId: number) => {
+    const { data } = await supabase.from('votes')
+      .select('*')
+      .eq('family_id', familyId)
+      .order('created_at', { ascending: false })
+    if (data) setVotes(data)
+  }
+
+  const pushFamily = async (id: number) => {
+    // Only update the active family id, no more voting_status
+    await supabase.from('live_control').update({ active_family_id: id }).eq('id', 1)
+  }
+
+  const resetSession = async () => {
+    await supabase.from('live_control').update({ active_family_id: null }).eq('id', 1)
+  }
+
+  // Calculate live tallies
+  const tallies = new Array(7).fill(0)
+  votes.forEach(v => {
+    tallies[v.category_1 - 1] += 1
+    tallies[v.category_2 - 1] += 1
+  })
+  const maxTally = Math.max(...tallies, 1) // Prevent division by zero
+
+  if (loading) return <div className="p-8 text-center text-xl font-bold">Loading Control Panel...</div>
+
+  return (
+    <div className="min-h-screen bg-gray-100 p-4 md:p-8 font-sans">
+      <div className="max-w-6xl mx-auto">
+        
+        {/* Header & Master Controls */}
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 mb-6 flex flex-col md:flex-row justify-between items-center gap-4">
+          <div>
+            <h1 className="text-3xl font-black text-gray-800">Admin Control Panel</h1>
+            <p className="text-gray-500 font-medium mt-1">
+              Active: {activeFamily ? FAMILY_NAMES[activeFamily] : 'None (Waiting Screen)'} • Total Votes: {votes.length}/58
+            </p>
+          </div>
+          <div className="flex gap-4">
+            <button onClick={resetSession} className="px-6 py-3 bg-gray-800 hover:bg-gray-900 text-white rounded-xl font-bold">
+              Reset
+            </button>
+          </div>
+        </div>
+
+        {/* Family Push Buttons */}
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 mb-6">
+          <h2 className="text-lg font-bold text-gray-700 mb-4 uppercase tracking-wide">Push Family Live</h2>
+          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
+            {[1, 2, 3, 4, 5, 6, 7].map((num) => (
+              <button
+                key={num}
+                onClick={() => pushFamily(num)}
+                className={`p-4 rounded-xl font-black transition-all ${activeFamily === num ? 'bg-blue-600 text-white shadow-lg scale-105 ring-4 ring-blue-200' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+              >
+                {FAMILY_NAMES[num]}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* Left Column: Live Tally Charts */}
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
+            <h2 className="text-xl font-black text-gray-800 mb-6 flex items-center justify-between">
+              Live Category Tally 
+              <span className="text-sm font-bold bg-blue-100 text-blue-700 px-3 py-1 rounded-full animate-pulse">LIVE</span>
+            </h2>
+            <div className="space-y-4">
+              {CATEGORIES.map((cat, index) => {
+                const count = tallies[index]
+                const percentage = (count / maxTally) * 100
+                return (
+                  <div key={index}>
+                    <div className="flex justify-between text-sm font-bold text-gray-700 mb-1">
+                      <span>{cat}</span>
+                      <span>{count} votes</span>
+                    </div>
+                    <div className="w-full bg-gray-100 rounded-full h-4 overflow-hidden">
+                      <div 
+                        className="bg-gradient-to-r from-blue-500 to-indigo-500 h-4 rounded-full transition-all duration-500 ease-out" 
+                        style={{ width: `${percentage}%` }}
+                      ></div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+
+          {/* Right Column: Live Comment Feed */}
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 flex flex-col h-[500px]">
+            <h2 className="text-xl font-black text-gray-800 mb-4 flex items-center justify-between">
+              Live Comment Feed
+              <span className="text-sm font-bold bg-pink-100 text-pink-700 px-3 py-1 rounded-full animate-pulse">LIVE</span>
+            </h2>
+            <div className="flex-1 overflow-y-auto space-y-4 pr-2 custom-scrollbar">
+              {votes.length === 0 ? (
+                <div className="h-full flex items-center justify-center text-gray-400 font-medium italic">
+                  Waiting for voters to submit...
+                </div>
+              ) : (
+                votes.map((vote) => (
+                  <div key={vote.id} className="bg-gray-50 border border-gray-100 p-4 rounded-xl animate-[fadeIn_0.3s_ease-out]">
+                    <div className="flex justify-between items-start mb-2">
+                      <span className="font-bold text-gray-800">{vote.voter_name}</span>
+                      <span className="text-xs font-bold text-gray-400 bg-gray-200 px-2 py-1 rounded">
+                        {new Date(vote.created_at).toLocaleTimeString()}
+                      </span>
+                    </div>
+                    <p className="text-gray-700 text-lg leading-relaxed">"{vote.comment}"</p>
+                    <div className="mt-3 flex gap-2 text-xs font-bold text-indigo-600">
+                      <span className="bg-indigo-50 px-2 py-1 rounded-md">{CATEGORIES[vote.category_1 - 1]}</span>
+                      <span className="bg-indigo-50 px-2 py-1 rounded-md">{CATEGORIES[vote.category_2 - 1]}</span>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  )
+}
+</file>
+
+<file path="app/results/page.tsx">
+"use client"
+
+import { useEffect, useState, useRef } from 'react'
+import { supabase } from '../../src/lib/supabase'
+import Confetti from 'react-confetti'
+
+const CATEGORIES = [
+  "1. Anugerah Persembahan Paling Gempak",
+  "2. Anugerah Pakaian Sedondon",
+  "3. Anugerah Keluarga Paling Sporting",
+  "4. Anugerah Keluarga Paling Havoc",
+  "5. Anugerah Keluarga Paling Sempoi",
+  "6. Anugerah Teamwork Paling Mantap",
+  "7. Anugerah Persiapan Paling Lengkap"
+]
+
+// Mapping Nama Keluarga untuk Halaman Hasil
+const FAMILY_NAMES: Record<number, string> = {
+  1: "Keluarga Ayahlong",
+  2: "Keluarga Ayah Ngah",
+  3: "Keluarga Mak Belakang",
+  4: "Keluarga Mak Lang",
+  5: "Keluarga Mak Dak",
+  6: "Keluarga Makteh",
+  7: "Keluarga Acu"
+}
+
+type ViewState = 'grid' | 'countdown' | 'winner' | 'comments'
+
+export default function ResultsPage() {
+  const [winners, setWinners] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+  
+  const [viewState, setViewState] = useState<ViewState>('grid')
+  const [activeCategoryIndex, setActiveCategoryIndex] = useState<number | null>(null)
+  
+  const [countdown, setCountdown] = useState(5.5) 
+  
+  const [isScrolling, setIsScrolling] = useState(true)
+  const scrollRef = useRef<HTMLDivElement>(null)
+
+  const audioRef = useRef<HTMLAudioElement | null>(null)
+
+  useEffect(() => {
+    audioRef.current = new Audio('/audio.m4a')
+
+    const calculateWinners = async () => {
+      const { data: votes } = await supabase.from('votes').select('*')
+      if (!votes) return
+
+      const scores = Array(7).fill(0).map(() => Array(7).fill(0))
+      const commentsMap = Array(7).fill(null).map(() => Array(7).fill(null).map(() => [] as {name: string, text: string}[]))
+
+      votes.forEach(v => {
+        const fIdx = v.family_id - 1
+        const c1Idx = v.category_1 - 1
+        const c2Idx = v.category_2 - 1
+
+        if (fIdx >= 0 && fIdx < 7) {
+          if (c1Idx >= 0 && c1Idx < 7) {
+            scores[fIdx][c1Idx]++
+            if (v.comment) commentsMap[fIdx][c1Idx].push({ name: v.voter_name, text: v.comment })
+          }
+          if (c2Idx >= 0 && c2Idx < 7) {
+            scores[fIdx][c2Idx]++
+            if (v.comment) commentsMap[fIdx][c2Idx].push({ name: v.voter_name, text: v.comment })
+          }
+        }
+      })
+
+      let unassignedFamilies = [0, 1, 2, 3, 4, 5, 6]
+      let unassignedCategories = [0, 1, 2, 3, 4, 5, 6]
+      const categoryWinners = Array(7).fill(null)
+
+      while (unassignedFamilies.length > 0 && unassignedCategories.length > 0) {
+        let maxScore = -1
+        let bestFam = -1
+        let bestCat = -1
+
+        for (let f of unassignedFamilies) {
+          for (let c of unassignedCategories) {
+            if (scores[f][c] > maxScore) {
+              maxScore = scores[f][c]
+              bestFam = f
+              bestCat = c
+            }
+          }
+        }
+
+        categoryWinners[bestCat] = {
+          winningFamily: bestFam + 1,
+          maxCount: maxScore,
+          allComments: commentsMap[bestFam][bestCat]
+        }
+
+        unassignedFamilies = unassignedFamilies.filter(f => f !== bestFam)
+        unassignedCategories = unassignedCategories.filter(c => c !== bestCat)
+      }
+
+      setWinners(categoryWinners)
+      setLoading(false)
+    }
+
+    calculateWinners()
+  }, [])
+
+  useEffect(() => {
+    let animationFrameId: number
+
+    const scrollStep = () => {
+      if (isScrolling && scrollRef.current) {
+        scrollRef.current.scrollTop += 1.5 
+      }
+      animationFrameId = requestAnimationFrame(scrollStep)
+    }
+
+    if (viewState === 'comments') {
+      animationFrameId = requestAnimationFrame(scrollStep)
+    }
+
+    return () => cancelAnimationFrame(animationFrameId)
+  }, [isScrolling, viewState])
+
+  const triggerEnvelope = (index: number) => {
+    setActiveCategoryIndex(index)
+    setViewState('countdown')
+    setCountdown(5.5) 
+
+    if (audioRef.current) {
+      audioRef.current.currentTime = 0
+      audioRef.current.play().catch(e => console.log("Audio play blocked:", e))
+    }
+
+    let count = 5.5
+    const timer = setInterval(() => {
+      count = Number((count - 0.1).toFixed(1))
+      setCountdown(count)
+      
+      if (count <= 0) {
+        clearInterval(timer)
+        setViewState('winner')
+      }
+    }, 100)
+  }
+
+  const goBackToGrid = () => {
+    if (audioRef.current) {
+      audioRef.current.pause()
+      audioRef.current.currentTime = 0
+    }
+    
+    setViewState('grid')
+    setActiveCategoryIndex(null)
+    setIsScrolling(true)
+  }
+
+  if (loading) return <div className="h-screen w-screen bg-black text-white flex items-center justify-center text-5xl font-bold animate-pulse">Memuat turun data pelayan...</div>
+
+  const activeData = activeCategoryIndex !== null ? winners[activeCategoryIndex] : null
+
+  return (
+    <div className="h-screen w-screen bg-slate-950 font-sans overflow-hidden text-white">
+      
+      {viewState === 'grid' && (
+        <div className="h-full w-full flex flex-col p-8">
+          <h1 className="text-5xl font-black text-center text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 via-amber-300 to-yellow-600 mb-8 drop-shadow-2xl uppercase tracking-widest">
+            Malam Keputusan Family Day
+          </h1>
+          
+          <div className="flex-1 grid grid-cols-1 gap-4 max-w-5xl mx-auto w-full pb-8">
+            {CATEGORIES.map((cat, index) => (
+              <div 
+                key={index} 
+                onClick={() => triggerEnvelope(index)}
+                className="group relative bg-gradient-to-r from-indigo-900 to-blue-900 rounded-2xl border-2 border-indigo-500/30 flex items-center p-6 cursor-pointer hover:scale-[1.02] hover:border-yellow-400 transition-all duration-300 shadow-xl"
+              >
+                <div className="absolute inset-0 bg-yellow-400/0 group-hover:bg-yellow-400/10 rounded-xl transition-all duration-500"></div>
+                <svg className="w-12 h-12 text-indigo-300 mr-6 group-hover:text-yellow-300 transition-colors duration-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path></svg>
+                <h2 className="text-3xl font-bold tracking-wide">{cat.substring(3)}</h2>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {viewState === 'countdown' && (
+        <div className="h-full w-full flex flex-col items-center justify-center bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-blue-900 via-slate-900 to-black relative overflow-hidden">
+          
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+            <div className="w-[50rem] h-[50rem] bg-indigo-500/20 rounded-full blur-[120px] animate-pulse"></div>
+            <div className="absolute w-[30rem] h-[30rem] bg-pink-500/20 rounded-full blur-[100px] animate-ping"></div>
+          </div>
+          
+          <h2 className="text-6xl text-transparent bg-clip-text bg-gradient-to-r from-indigo-300 to-pink-300 uppercase tracking-widest mb-12 z-10 font-bold drop-shadow-2xl">
+            {CATEGORIES[activeCategoryIndex!].substring(3)}
+          </h2>
+          
+          <div className="text-[20rem] font-black text-white animate-[ping_1s_cubic-bezier(0,0,0.2,1)_infinite] drop-shadow-[0_0_80px_rgba(255,255,255,0.8)] z-10 leading-none">
+            {countdown.toFixed(1)}
+          </div>
+        </div>
+      )}
+
+      {viewState === 'winner' && (
+        <div className="h-full w-full flex flex-col items-center justify-center bg-gradient-to-br from-indigo-900 via-purple-900 to-black relative">
+          <Confetti recycle={true} numberOfPieces={500} gravity={0.15} />
+          
+          <h2 className="text-5xl font-bold text-yellow-300 mb-8 uppercase tracking-widest animate-[fadeIn_1s_ease-out]">
+            {CATEGORIES[activeCategoryIndex!]}
+          </h2>
+          
+          {activeData?.winningFamily ? (
+            <>
+              {/* Teks Pengumuman Pemenang Menggunakan Nama Asli */}
+              <div className="text-[7rem] md:text-[9rem] font-black text-white mb-6 drop-shadow-[0_0_50px_rgba(255,255,255,0.3)] animate-[scaleIn_0.5s_ease-out] text-center leading-tight">
+                {FAMILY_NAMES[activeData.winningFamily]}
+              </div>
+              
+              <div className="text-5xl font-bold text-pink-400 mb-16 animate-[fadeIn_2s_ease-out]">
+                {activeData.maxCount} Undian Sah
+              </div>
+
+              <div className="flex gap-8 z-10">
+                <button 
+                  onClick={goBackToGrid}
+                  className="px-10 py-5 bg-gray-800 hover:bg-gray-700 rounded-full text-2xl font-bold transition-colors shadow-xl"
+                >
+                  Kembali
+                </button>
+                <button 
+                  onClick={() => setViewState('comments')}
+                  className="px-12 py-5 bg-gradient-to-r from-pink-500 to-orange-400 hover:scale-105 rounded-full text-2xl font-black transition-all shadow-[0_0_40px_rgba(236,72,153,0.5)]"
+                >
+                  Teruskan ke Ruangan Komen
+                </button>
+              </div>
+            </>
+          ) : (
+            <div className="text-7xl font-black text-gray-500 mt-12">Tiada Undian</div>
+          )}
+        </div>
+      )}
+
+      {viewState === 'comments' && (
+        <div className="h-full w-full flex flex-col bg-slate-950 relative">
+          <div className="bg-black/50 backdrop-blur-md p-6 border-b border-gray-800 flex justify-between items-center z-10">
+            <div>
+              {/* Teks Judul Komen Menggunakan Nama Asli */}
+              <h2 className="text-3xl font-black text-yellow-400">
+                Komen Peminat: {activeData?.winningFamily ? FAMILY_NAMES[activeData.winningFamily] : ""}
+              </h2>
+              <p className="text-gray-400 text-lg">{CATEGORIES[activeCategoryIndex!]}</p>
+            </div>
+            
+            <div className="flex gap-4">
+              <button 
+                onClick={() => setIsScrolling(!isScrolling)}
+                className={`px-8 py-3 rounded-full font-bold text-xl transition-colors ${isScrolling ? 'bg-red-500 hover:bg-red-600' : 'bg-green-500 hover:bg-green-600'}`}
+              >
+                {isScrolling ? 'PAUSE SCROLL' : 'RESUME SCROLL'}
+              </button>
+              <button 
+                onClick={goBackToGrid}
+                className="px-8 py-3 bg-gray-800 hover:bg-gray-700 rounded-full font-bold text-xl transition-colors"
+              >
+                Tutup Komen
+              </button>
+            </div>
+          </div>
+
+          <div 
+            ref={scrollRef}
+            className="flex-1 overflow-y-auto p-12 custom-scrollbar pb-[50vh]"
+            onMouseEnter={() => setIsScrolling(false)}
+            onMouseLeave={() => setIsScrolling(true)}
+          >
+            <div className="max-w-5xl mx-auto space-y-8">
+              {activeData?.allComments.map((commentData: {name: string, text: string}, idx: number) => (
+                <div key={idx} className="bg-gray-900 border-l-8 border-pink-500 p-8 rounded-r-2xl shadow-lg transform transition-transform hover:scale-[1.02]">
+                  <p className="text-2xl font-bold text-pink-400 mb-3">{commentData.name}</p>
+                  <p className="text-4xl text-gray-100 leading-relaxed font-medium">"{commentData.text}"</p>
+                </div>
+              ))}
+              {activeData?.allComments.length === 0 && (
+                <div className="text-center text-4xl text-gray-600 mt-20">Tiada komen ditinggalkan.</div>
+              )}
+            </div>
+          </div>
+          
+          <div className="absolute bottom-0 left-0 right-0 h-32 bg-gradient-to-t from-slate-950 to-transparent pointer-events-none"></div>
+        </div>
+      )}
+
+    </div>
+  )
+}
+</file>
+
+<file path="app/globals.css">
+@import "tailwindcss";
+
+:root {
+  --background: #ffffff;
+  --foreground: #171717;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0a0a0a;
+    --foreground: #ededed;
+  }
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: Arial, Helvetica, sans-serif;
+}
+</file>
+
+<file path="app/layout.tsx">
+import type { Metadata } from "next";
+import { Geist, Geist_Mono } from "next/font/google";
+import "./globals.css";
+
+const geistSans = Geist({
+  variable: "--font-geist-sans",
+  subsets: ["latin"],
+});
+
+const geistMono = Geist_Mono({
+  variable: "--font-geist-mono",
+  subsets: ["latin"],
+});
+
+export const metadata: Metadata = {
+  title: "Create Next App",
+  description: "Generated by create next app",
+};
+
+export default function RootLayout({ children }: LayoutProps<"/">) {
+  return (
+    <html
+      lang="en"
+      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+    >
+      <body className="min-h-full flex flex-col">{children}</body>
+    </html>
+  );
+}
+</file>
+
+<file path="public/file.svg">
+<svg fill="none" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg"><path d="M14.5 13.5V5.41a1 1 0 0 0-.3-.7L9.8.29A1 1 0 0 0 9.08 0H1.5v13.5A2.5 2.5 0 0 0 4 16h8a2.5 2.5 0 0 0 2.5-2.5m-1.5 0v-7H8v-5H3v12a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1M9.5 5V2.12L12.38 5zM5.13 5h-.62v1.25h2.12V5zm-.62 3h7.12v1.25H4.5zm.62 3h-.62v1.25h7.12V11z" clip-rule="evenodd" fill="#666" fill-rule="evenodd"/></svg>
+</file>
+
+<file path="public/globe.svg">
+<svg fill="none" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><g clip-path="url(#a)"><path fill-rule="evenodd" clip-rule="evenodd" d="M10.27 14.1a6.5 6.5 0 0 0 3.67-3.45q-1.24.21-2.7.34-.31 1.83-.97 3.1M8 16A8 8 0 1 0 8 0a8 8 0 0 0 0 16m.48-1.52a7 7 0 0 1-.96 0H7.5a4 4 0 0 1-.84-1.32q-.38-.89-.63-2.08a40 40 0 0 0 3.92 0q-.25 1.2-.63 2.08a4 4 0 0 1-.84 1.31zm2.94-4.76q1.66-.15 2.95-.43a7 7 0 0 0 0-2.58q-1.3-.27-2.95-.43a18 18 0 0 1 0 3.44m-1.27-3.54a17 17 0 0 1 0 3.64 39 39 0 0 1-4.3 0 17 17 0 0 1 0-3.64 39 39 0 0 1 4.3 0m1.1-1.17q1.45.13 2.69.34a6.5 6.5 0 0 0-3.67-3.44q.65 1.26.98 3.1M8.48 1.5l.01.02q.41.37.84 1.31.38.89.63 2.08a40 40 0 0 0-3.92 0q.25-1.2.63-2.08a4 4 0 0 1 .85-1.32 7 7 0 0 1 .96 0m-2.75.4a6.5 6.5 0 0 0-3.67 3.44 29 29 0 0 1 2.7-.34q.31-1.83.97-3.1M4.58 6.28q-1.66.16-2.95.43a7 7 0 0 0 0 2.58q1.3.27 2.95.43a18 18 0 0 1 0-3.44m.17 4.71q-1.45-.12-2.69-.34a6.5 6.5 0 0 0 3.67 3.44q-.65-1.27-.98-3.1" fill="#666"/></g><defs><clipPath id="a"><path fill="#fff" d="M0 0h16v16H0z"/></clipPath></defs></svg>
+</file>
+
+<file path="public/next.svg">
+<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 394 80"><path fill="#000" d="M262 0h68.5v12.7h-27.2v66.6h-13.6V12.7H262V0ZM149 0v12.7H94v20.4h44.3v12.6H94v21h55v12.6H80.5V0h68.7zm34.3 0h-17.8l63.8 79.4h17.9l-32-39.7 32-39.6h-17.9l-23 28.6-23-28.6zm18.3 56.7-9-11-27.1 33.7h17.8l18.3-22.7z"/><path fill="#000" d="M81 79.3 17 0H0v79.3h13.6V17l50.2 62.3H81Zm252.6-.4c-1 0-1.8-.4-2.5-1s-1.1-1.6-1.1-2.6.3-1.8 1-2.5 1.6-1 2.6-1 1.8.3 2.5 1a3.4 3.4 0 0 1 .6 4.3 3.7 3.7 0 0 1-3 1.8zm23.2-33.5h6v23.3c0 2.1-.4 4-1.3 5.5a9.1 9.1 0 0 1-3.8 3.5c-1.6.8-3.5 1.3-5.7 1.3-2 0-3.7-.4-5.3-1s-2.8-1.8-3.7-3.2c-.9-1.3-1.4-3-1.4-5h6c.1.8.3 1.6.7 2.2s1 1.2 1.6 1.5c.7.4 1.5.5 2.4.5 1 0 1.8-.2 2.4-.6a4 4 0 0 0 1.6-1.8c.3-.8.5-1.8.5-3V45.5zm30.9 9.1a4.4 4.4 0 0 0-2-3.3 7.5 7.5 0 0 0-4.3-1.1c-1.3 0-2.4.2-3.3.5-.9.4-1.6 1-2 1.6a3.5 3.5 0 0 0-.3 4c.3.5.7.9 1.3 1.2l1.8 1 2 .5 3.2.8c1.3.3 2.5.7 3.7 1.2a13 13 0 0 1 3.2 1.8 8.1 8.1 0 0 1 3 6.5c0 2-.5 3.7-1.5 5.1a10 10 0 0 1-4.4 3.5c-1.8.8-4.1 1.2-6.8 1.2-2.6 0-4.9-.4-6.8-1.2-2-.8-3.4-2-4.5-3.5a10 10 0 0 1-1.7-5.6h6a5 5 0 0 0 3.5 4.6c1 .4 2.2.6 3.4.6 1.3 0 2.5-.2 3.5-.6 1-.4 1.8-1 2.4-1.7a4 4 0 0 0 .8-2.4c0-.9-.2-1.6-.7-2.2a11 11 0 0 0-2.1-1.4l-3.2-1-3.8-1c-2.8-.7-5-1.7-6.6-3.2a7.2 7.2 0 0 1-2.4-5.7 8 8 0 0 1 1.7-5 10 10 0 0 1 4.3-3.5c2-.8 4-1.2 6.4-1.2 2.3 0 4.4.4 6.2 1.2 1.8.8 3.2 2 4.3 3.4 1 1.4 1.5 3 1.5 5h-5.8z"/></svg>
+</file>
+
+<file path="public/vercel.svg">
+<svg fill="none" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1155 1000"><path d="m577.3 0 577.4 1000H0z" fill="#fff"/></svg>
+</file>
+
+<file path="public/window.svg">
+<svg fill="none" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><path fill-rule="evenodd" clip-rule="evenodd" d="M1.5 2.5h13v10a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1zM0 1h16v11.5a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 0 12.5zm3.75 4.5a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5M7 4.75a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0m1.75.75a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5" fill="#666"/></svg>
+</file>
+
+<file path="src/lib/supabase.ts">
+import { createClient } from '@supabase/supabase-js'
+
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
+const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+
+export const supabase = createClient(supabaseUrl, supabaseKey)
+</file>
+
+<file path=".gitignore">
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# dependencies
+/node_modules
+/.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# testing
+/coverage
+
+# next.js
+/.next/
+/out/
+
+# production
+/build
+
+# misc
+.DS_Store
+*.pem
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# env files (can opt-in for committing if needed)
+.env*
+
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+</file>
+
+<file path="AGENTS.md">
+<!-- BEGIN:nextjs-agent-rules -->
+
+## This is NOT the Next.js you know
+
+This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
+
+This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
+
+<!-- END:nextjs-agent-rules -->
+</file>
+
+<file path="eslint.config.mjs">
+import { defineConfig, globalIgnores } from "eslint/config";
+import nextVitals from "eslint-config-next/core-web-vitals";
+import nextTs from "eslint-config-next/typescript";
+
+const eslintConfig = defineConfig([
+  ...nextVitals,
+  ...nextTs,
+  // Override default ignores of eslint-config-next.
+  globalIgnores([
+    // Default ignores of eslint-config-next:
+    ".next/**",
+    "out/**",
+    "build/**",
+    "next-env.d.ts",
+  ]),
+]);
+
+export default eslintConfig;
+</file>
+
+<file path="next.config.ts">
+import type { NextConfig } from "next";
+
+const nextConfig: NextConfig = {
+  /* config options here */
+  experimental: {
+    agentFeedback: true,
+  },
+  cacheComponents: true,
+  partialPrefetching: true,
+  turbopack: {
+    rules: {
+      "*.css": {
+        loaders: ["@tailwindcss/turbopack"],
+        as: "*.css",
+      },
+    },
+  },
+};
+
+export default nextConfig;
+</file>
+
+<file path="README.md">
+This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+
+## Getting Started
+
+First, run the development server:
+
+```bash
+npm run dev
+# or
+yarn dev
+# or
+pnpm dev
+# or
+bun dev
+```
+
+Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+
+You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+
+This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+
+## Learn More
+
+To learn more about Next.js, take a look at the following resources:
+
+- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
+- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+
+You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+
+## Deploy on Vercel
+
+The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+
+Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+</file>
+
+<file path="tsconfig.json">
+{
+  "compilerOptions": {
+    "target": "ES2017",
+    "lib": ["dom", "dom.iterable", "esnext"],
+    "allowJs": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "jsx": "react-jsx",
+    "incremental": true,
+    "plugins": [
+      {
+        "name": "next"
+      }
+    ],
+    "paths": {
+      "@/*": ["./*"]
+    }
+  },
+  "include": [
+    "next-env.d.ts",
+    "**/*.ts",
+    "**/*.tsx",
+    ".next/types/**/*.ts",
+    ".next/dev/types/**/*.ts",
+    "**/*.mts"
+  ],
+  "exclude": ["node_modules"]
+}
+</file>
+
+<file path="app/page.tsx">
+"use client"
+
+import { useEffect, useState } from 'react'
+import { supabase } from '../src/lib/supabase'
+
+const CATEGORIES = [
+  "1. Anugerah Persembahan Paling Gempak",
+  "2. Anugerah Pakaian Sedondon",
+  "3. Anugerah Keluarga Paling Sporting",
+  "4. Anugerah Keluarga Paling Havoc",
+  "5. Anugerah Keluarga Paling Sempoi",
+  "6. Anugerah Teamwork Paling Mantap",
+  "7. Anugerah Persiapan Paling Lengkap"
+]
+
+const FAMILY_DATA: Record<number, { name: string, image: string }> = {
+  1: { name: "Keluarga Ayahlong", image: "/keluarga-1.jpg" },
+  2: { name: "Keluarga Ayah Ngah", image: "/keluarga-2.jpg" },
+  3: { name: "Keluarga Mak Belakang", image: "/keluarga-3.jpg" },
+  4: { name: "Keluarga Mak Lang", image: "/keluarga-4.jpg" },
+  5: { name: "Keluarga Mak Dak", image: "/keluarga-5.jpg" },
+  6: { name: "Keluarga Makteh", image: "/keluarga-6.jpg" },
+  7: { name: "Keluarga Acu", image: "/keluarga-7.jpg" }
+}
+
+export default function VoterScreen() {
+  const [viewState, setViewState] = useState<'idle' | 'reveal' | 'voting' | 'submitted'>('idle')
+  const [showNameModal, setShowNameModal] = useState(false)
+  const [showCommentModal, setShowCommentModal] = useState(false)
+
+  const [activeFamily, setActiveFamily] = useState<number | null>(null)
+  const [voterName, setVoterName] = useState('')
+  const [comment, setComment] = useState('')
+  const [selectedCategories, setSelectedCategories] = useState<number[]>([])
+  const [voteCount, setVoteCount] = useState(0)
+  const [loading, setLoading] = useState(true)
+  const [hasVotedThisFamily, setHasVotedThisFamily] = useState(false)
+
+  useEffect(() => {
+    const fetchState = async () => {
+      const { data } = await supabase.from('live_control').select('*').single()
+      if (data) {
+        setActiveFamily(data.active_family_id)
+        if (data.active_family_id) {
+          fetchVoteCount(data.active_family_id)
+          checkDeviceVote(data.active_family_id)
+        }
+      }
+      setLoading(false)
+    }
+    fetchState()
+
+    const channel = supabase
+      .channel('admin_changes')
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'live_control' }, (payload) => {
+        const newData = payload.new
+        setActiveFamily(newData.active_family_id)
+        
+        if (newData.active_family_id) {
+           setViewState('reveal')
+           setShowNameModal(false)
+           setShowCommentModal(false)
+           setSelectedCategories([])
+           setComment('')
+           setVoterName('')
+           fetchVoteCount(newData.active_family_id)
+           checkDeviceVote(newData.active_family_id)
+        } else {
+           setViewState('idle')
+        }
+      })
+      .subscribe()
+
+    return () => { supabase.removeChannel(channel) }
+  }, [])
+
+  const checkDeviceVote = (familyId: number) => {
+    const hasVoted = localStorage.getItem(`voted_family_${familyId}`)
+    if (hasVoted === 'true') {
+      setHasVotedThisFamily(true)
+      setViewState('submitted')
+    } else {
+      setHasVotedThisFamily(false)
+      setViewState('reveal')
+    }
+  }
+
+  const fetchVoteCount = async (familyId: number) => {
+    const { count } = await supabase.from('votes').select('*', { count: 'exact', head: true }).eq('family_id', familyId)
+    setVoteCount(count || 0)
+  }
+
+  const toggleCategory = (index: number) => {
+    if (selectedCategories.includes(index)) {
+      setSelectedCategories(selectedCategories.filter(i => i !== index))
+    } else if (selectedCategories.length < 2) {
+      setSelectedCategories([...selectedCategories, index])
+    }
+  }
+
+  const submitFinalVote = async () => {
+    if (selectedCategories.length !== 2 || !voterName || !comment || hasVotedThisFamily) return
+    
+    const { error } = await supabase.from('votes').insert({
+      voter_name: voterName,
+      family_id: activeFamily,
+      category_1: selectedCategories[0] + 1,
+      category_2: selectedCategories[1] + 1,
+      comment: comment
+    })
+
+    if (!error) {
+      localStorage.setItem(`voted_family_${activeFamily}`, 'true')
+      setHasVotedThisFamily(true)
+      setShowCommentModal(false)
+      setViewState('submitted')
+    }
+  }
+
+  const voteAgainAsRepresentative = () => {
+    if (!activeFamily) return
+    localStorage.removeItem(`voted_family_${activeFamily}`)
+    setHasVotedThisFamily(false)
+    setVoterName('')
+    setComment('')
+    setSelectedCategories([])
+    setViewState('reveal')
+  }
+
+  if (loading) return <div className="min-h-screen bg-black flex items-center justify-center text-white">Loading...</div>
+
+  if (viewState === 'idle' || !activeFamily) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-black to-gray-900 flex items-center justify-center p-6">
+        <div className="text-center">
+          <div className="w-24 h-24 border-4 border-t-blue-500 border-gray-700 rounded-full animate-spin mx-auto mb-8"></div>
+          <h1 className="text-3xl md:text-5xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-500 animate-pulse tracking-wide">
+            Menunggu Persembahan Seterusnya...
+          </h1>
+        </div>
+      </div>
+    )
+  }
+
+  if (viewState === 'submitted' || hasVotedThisFamily) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-green-600 to-emerald-900 flex flex-col items-center justify-center text-white p-6 text-center shadow-inner">
+        <div className="bg-white/20 p-8 rounded-full mb-8 backdrop-blur-sm animate-bounce">
+          <svg className="w-20 h-20 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7"></path></svg>
+        </div>
+        <h1 className="text-5xl font-black mb-4 drop-shadow-lg">Undian Direkodkan!</h1>
+        <p className="text-xl text-green-100 font-medium max-w-md mx-auto mb-10">
+          Peranti ini telah membuat undian untuk {FAMILY_DATA[activeFamily].name}. Sila tunggu keluarga seterusnya.
+        </p>
+
+        {voteCount < 58 && (
+          <button 
+            onClick={voteAgainAsRepresentative}
+            className="px-8 py-4 bg-white/20 hover:bg-white text-white hover:text-green-800 border-2 border-white rounded-full font-bold text-lg transition-all duration-300 shadow-xl"
+          >
+            Undi Lagi (Wakil Orang Tua/Kanak-Kanak)
+          </button>
+        )}
+      </div>
+    )
+  }
+
+  return (
+    <div className="min-h-screen bg-slate-900 font-sans relative overflow-hidden">
+      
+      {/* Tampilan Visual (Grand Reveal) dengan Foto Keluarga */}
+      {viewState === 'reveal' && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center p-6 bg-gradient-to-b from-indigo-900 to-black z-10 animate-[fadeIn_0.5s_ease-out]">
+          <h2 className="text-3xl text-indigo-200 font-bold mb-6 tracking-widest uppercase">Persembahan Sekarang</h2>
+          
+          <div className="relative w-full max-w-md md:max-w-lg aspect-[4/5] md:aspect-video bg-gray-900 rounded-3xl shadow-[0_0_50px_rgba(79,70,229,0.5)] flex items-center justify-center mb-12 transform hover:scale-105 transition-transform duration-500 border-4 border-white/10 overflow-hidden">
+             
+             {/* Latar Belakang Blur (Glassmorphism Effect) */}
+             <img 
+               src={FAMILY_DATA[activeFamily].image} 
+               alt="Background" 
+               className="absolute inset-0 w-full h-full object-cover blur-xl opacity-40 scale-110"
+               onError={(e) => { e.currentTarget.style.display = 'none'; }}
+             />
+
+             {/* Foto Utama - object-contain memastikan seluruh gambar terlihat */}
+             <img 
+               src={FAMILY_DATA[activeFamily].image} 
+               alt={FAMILY_DATA[activeFamily].name} 
+               className="absolute inset-0 w-full h-full object-contain z-0"
+               onError={(e) => { e.currentTarget.style.display = 'none'; }}
+             />
+             
+             {/* Gradient Overlay untuk membuat teks mudah dibaca */}
+             <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/30 to-transparent z-10"></div>
+             
+             {/* Teks Nama Keluarga di bagian bawah kotak */}
+             <h1 className="absolute bottom-6 left-0 right-0 z-20 text-4xl md:text-5xl font-black text-white drop-shadow-[0_4px_4px_rgba(0,0,0,0.8)] text-center px-4">
+               {FAMILY_DATA[activeFamily].name}
+             </h1>
+          </div>
+
+          <button 
+            onClick={() => setShowNameModal(true)}
+            className="group relative px-10 py-5 bg-gradient-to-r from-pink-500 to-orange-400 rounded-full text-white font-black text-2xl shadow-[0_0_30px_rgba(236,72,153,0.6)] hover:shadow-[0_0_50px_rgba(236,72,153,0.8)] hover:scale-110 transition-all duration-300 animate-bounce"
+          >
+            MULA MENGUNDI
+            <div className="absolute inset-0 h-full w-full rounded-full bg-white/20 scale-0 group-hover:scale-100 transition-transform duration-300 ease-out"></div>
+          </button>
+        </div>
+      )}
+
+      {viewState === 'voting' && (
+        <div className="relative z-0 p-4 md:p-8 pt-12 pb-32 max-w-4xl mx-auto">
+          <div className="text-center mb-10">
+            <h2 className="text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-blue-500 mb-2">
+              {FAMILY_DATA[activeFamily].name}
+            </h2>
+            <p className="text-gray-400 text-lg">Pilih 2 Kategori Terbaik ({selectedCategories.length}/2)</p>
+          </div>
+
+          {voteCount >= 58 && (
+             <div className="bg-orange-500/20 border border-orange-500 text-orange-200 p-4 rounded-xl mb-8 font-bold text-center text-xl backdrop-blur-md">
+               Had maksimum (58) undian telah dicapai untuk keluarga ini!
+             </div>
+          )}
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {CATEGORIES.map((cat, index) => {
+              const isSelected = selectedCategories.includes(index)
+              return (
+                <button
+                  key={index}
+                  onClick={() => toggleCategory(index)}
+                  className={`relative overflow-hidden p-6 rounded-2xl text-left transition-all duration-300 min-h-[100px] flex items-center shadow-lg
+                    ${isSelected 
+                      ? 'bg-gradient-to-r from-blue-600 to-indigo-600 border-2 border-white scale-[1.02] shadow-[0_0_20px_rgba(79,70,229,0.5)]' 
+                      : 'bg-gray-800 border-2 border-gray-700 hover:border-gray-500 text-gray-300'
+                    }`}
+                >
+                  <span className={`text-xl font-bold ${isSelected ? 'text-white' : ''}`}>{cat}</span>
+                  {isSelected && (
+                    <div className="absolute right-4 top-1/2 transform -translate-y-1/2 text-white">
+                      <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7"></path></svg>
+                    </div>
+                  )}
+                </button>
+              )
+            })}
+          </div>
+
+          <div className="fixed bottom-0 left-0 right-0 p-6 bg-gradient-to-t from-gray-900 via-gray-900 to-transparent">
+            <div className="max-w-4xl mx-auto">
+              <button
+                onClick={() => setShowCommentModal(true)}
+                disabled={selectedCategories.length !== 2 || voteCount >= 58}
+                className={`w-full py-5 rounded-2xl font-black text-2xl text-white transition-all duration-300 shadow-2xl
+                  ${selectedCategories.length !== 2 || voteCount >= 58 
+                    ? 'bg-gray-700 text-gray-500 cursor-not-allowed' 
+                    : 'bg-gradient-to-r from-green-500 to-emerald-400 hover:scale-[1.02] hover:shadow-[0_0_30px_rgba(16,185,129,0.4)]'
+                  }`}
+              >
+                {selectedCategories.length < 2 ? 'PILIH 2 KATEGORI' : 'TERUSKAN'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showNameModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
+          <div className="bg-gray-800 border border-gray-600 rounded-3xl p-8 w-full max-w-md shadow-2xl transform scale-100 animate-[fadeIn_0.2s_ease-out]">
+            <h3 className="text-3xl font-black text-white mb-2">Siapa anda?</h3>
+            <p className="text-gray-400 mb-8">Sila masukkan nama untuk rekod undian.</p>
+            <input 
+              type="text" 
+              value={voterName}
+              onChange={(e) => setVoterName(e.target.value)}
+              className="w-full bg-gray-900 border-2 border-gray-600 rounded-2xl p-5 text-2xl text-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/20 outline-none mb-8 transition-all"
+              placeholder="Nama anda..."
+              autoFocus
+            />
+            <button
+              onClick={() => {
+                if(voterName.trim()) {
+                  setShowNameModal(false)
+                  setViewState('voting')
+                }
+              }}
+              className="w-full py-4 bg-blue-600 hover:bg-blue-500 text-white rounded-2xl font-bold text-xl transition-colors"
+            >
+              Teruskan Mengundi
+            </button>
+          </div>
+        </div>
+      )}
+
+      {showCommentModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
+          <div className="bg-gray-800 border border-gray-600 rounded-3xl p-8 w-full max-w-md shadow-2xl">
+            <h3 className="text-3xl font-black text-white mb-2">Komen Persembahan</h3>
+            <p className="text-gray-400 mb-6">Tinggalkan komen padu anda untuk {FAMILY_DATA[activeFamily].name}!</p>
+            <textarea 
+              value={comment}
+              onChange={(e) => setComment(e.target.value)}
+              className="w-full bg-gray-900 border-2 border-gray-600 rounded-2xl p-5 text-xl text-white focus:border-pink-500 focus:ring-4 focus:ring-pink-500/20 outline-none mb-6 min-h-[150px] resize-none transition-all"
+              placeholder="Fuh, persembahan paling gempak abad ini..."
+              autoFocus
+            />
+            <div className="flex gap-4">
+              <button
+                onClick={() => setShowCommentModal(false)}
+                className="w-1/3 py-4 bg-gray-700 hover:bg-gray-600 text-white rounded-2xl font-bold text-lg transition-colors"
+              >
+                Kembali
+              </button>
+              <button
+                onClick={submitFinalVote}
+                disabled={!comment.trim()}
+                className={`w-2/3 py-4 rounded-2xl font-black text-xl text-white transition-all shadow-lg
+                  ${!comment.trim() ? 'bg-gray-600 text-gray-400 cursor-not-allowed' : 'bg-gradient-to-r from-pink-500 to-orange-400 hover:scale-105'}`}
+              >
+                HANTAR UNDIAN
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+    </div>
+  )
+}
+</file>
+
+<file path="package.json">
+{
+  "name": "family-day-voting",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.118.0",
+    "next": "16.4.3",
+    "react": "19.3.0",
+    "react-confetti": "^6.4.0",
+    "react-dom": "19.3.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/turbopack": "^4",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "16.4.3",
+    "tailwindcss": "^4",
+    "typescript": "^5"
+  }
+}
+</file>
+
+</files>
